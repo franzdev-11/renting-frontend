@@ -11,15 +11,20 @@ import type {
   CobranzaResponse,
   ContratoDetalleResponse,
   ContratoResponse,
+  EstadoFisico,
   HistorialEstadoCobranzaResponse,
   HistorialEstadoResponse,
+  HistorialUbicacionResponse,
   HistorialLecturaVehiculoResponse,
   IncidenteActivoResponse,
   IngresoActivoResponse,
   LoginResponse,
   MovimientoResponse,
   ResponsableResponse,
+  RolContacto,
   SeguroActivoResponse,
+  Severidad,
+  TipoPersona,
   TipoProductoResponse,
   UserResponse,
 } from "./types";
@@ -56,7 +61,7 @@ export function listClientesInactivos() {
 export function createCliente(data: {
   ruc: string;
   razonSocial: string;
-  tipoPersona?: string;
+  tipoPersona?: TipoPersona;
   regulada?: boolean;
 }) {
   return post<ClienteResponse>("/api/clientes", data);
@@ -82,7 +87,7 @@ export function updateCliente(
   id: number,
   data: {
     razonSocial?: string;
-    tipoPersona?: string;
+    tipoPersona?: TipoPersona;
     estadoSunat?: string;
     sectorGiro?: string;
     representanteLegal?: string;
@@ -204,6 +209,7 @@ export function getActivo(id: number) {
 // activo Y el documento de ingreso (proveedor, costo, etc) en un solo paso.
 export function registrarIngresoConActivoNuevo(data: {
   tipoIngreso?: string;
+  ordenCompra?: string;
   proveedor?: string;
   numeroDocumento?: string;
   observacion?: string;
@@ -214,6 +220,9 @@ export function registrarIngresoConActivoNuevo(data: {
     estadoOperativo?: string;
     costo?: number;
     moneda?: string;
+    sede: string;
+    area: string;
+    detalle?: string;
   }>;
 }) {
   return post<IngresoActivoResponse>(
@@ -224,7 +233,7 @@ export function registrarIngresoConActivoNuevo(data: {
 
 export function trasladarActivo(
   idActivo: number,
-  data: { sede: string; area?: string; detalle?: string; motivo?: string }
+  data: { sede: string; area: string; detalle?: string; motivo?: string }
 ) {
   return patch<ActivoResponse>(`/api/activos/${idActivo}/trasladar`, data);
 }
@@ -244,7 +253,7 @@ export function updateActivo(
     color?: string;
     especificaciones?: string;
     criticidad?: string;
-    estadoFisico?: string;
+    estadoFisico?: EstadoFisico;
     estadoOperativo?: string;
     vidaUtilAnios?: number;
     unidadesTotalesVida?: number;
@@ -262,6 +271,23 @@ export function deactivateActivo(id: number) {
 
 export function reactivateActivo(id: number) {
   return patch<ActivoResponse>(`/api/activos/${id}/activate`);
+}
+
+// Solo para activos con estadoOperativo="baja": reactiva + deja disponible +
+// registra el movimiento de ingreso, todo en un paso. Para cualquier otro
+// motivo de inactivación, seguir usando reactivateActivo().
+export function reactivarReingresoActivo(
+  id: number,
+  data: { sede: string; area: string; detalle?: string; motivo?: string }
+) {
+  return patch<ActivoResponse>(`/api/activos/${id}/reactivar-reingreso`, data);
+}
+
+export function liberarMantenimientoActivo(
+  id: number,
+  data: { sede: string; area: string; detalle?: string }
+) {
+  return patch<ActivoResponse>(`/api/activos/${id}/liberar-mantenimiento`, data);
 }
 
 // Historial de tarifas: todos los detalles de contrato (de cualquier
@@ -375,6 +401,12 @@ export function getHistorialEstadosMovimiento(idMovimiento: number) {
   );
 }
 
+export function getHistorialUbicaciones(idActivo: number) {
+  return get<HistorialUbicacionResponse[]>(
+    `/api/movimientos/activo/${idActivo}/ubicaciones`
+  );
+}
+
 export function cambiarEstadoMovimiento(
   idMovimiento: number,
   data: { nuevoEstado: string; observacion?: string }
@@ -394,7 +426,7 @@ export function listIncidentesByActivo(idActivo: number) {
 export function reportarIncidente(data: {
   idActivo: number;
   tipoIncidente: string;
-  severidad?: string;
+  severidad?: Severidad;
   descripcion?: string;
   observacion?: string;
 }) {
@@ -435,7 +467,7 @@ export function resolverIncidente(
 
 export function retornarMantenimiento(
   idActivo: number,
-  data: { observacion?: string }
+  data: { observacion?: string; sede: string; area: string; detalle?: string }
 ) {
   return post<unknown>(
     `/api/contratos/activo/${idActivo}/retornar-mantenimiento`,
@@ -514,6 +546,29 @@ export function agregarDetalleContrato(
   );
 }
 
+// Version en lote: agrega varios activos al mismo contrato de una sola vez.
+export function agregarDetallesLoteContrato(
+  idContrato: number,
+  data: {
+    detalles: Array<{
+      idActivo: number;
+      idResponsable?: number;
+      tipoTarifa: "DIARIO" | "SEMANAL" | "MENSUAL" | "TRIMESTRAL" | "SEMESTRAL" | "ANUAL";
+      precioBase: number;
+      montoDescuento?: number;
+      moneda: "PEN" | "USD";
+      diaFacturacion?: number;
+      fechaInicioAlquiler: string;
+      fechaFinPrevista?: string;
+    }>;
+  }
+) {
+  return post<ContratoResponse>(
+    `/api/contratos/${idContrato}/detalles-lote`,
+    data
+  );
+}
+
 export function devolverActivo(
   idDetalle: number,
   data: { fechaFinReal?: string; observacion?: string }
@@ -527,6 +582,10 @@ export function reemplazarActivo(
     idActivoReemplazo: number;
     estadoActivoAnterior?: string;
     observacion?: string;
+    fechaInicioAlquiler?: string;
+    sede: string;
+    area: string;
+    detalle?: string;
   }
 ) {
   return post<unknown>(
@@ -541,6 +600,16 @@ export function cambiarResponsable(
 ) {
   return patch<unknown>(
     `/api/contratos/detalle/${idDetalle}/cambiar-responsable`,
+    data
+  );
+}
+
+export function editarFechaInicioAlquiler(
+  idDetalle: number,
+  data: { nuevaFechaInicioAlquiler: string }
+) {
+  return patch<ContratoDetalleResponse>(
+    `/api/contratos/detalle/${idDetalle}/fecha-inicio-alquiler`,
     data
   );
 }
@@ -567,16 +636,46 @@ export function extenderContrato(
 
 // Confirma que un activo "pendiente_entrega" ya se le entregó físicamente al
 // cliente (recién ahí se mueve su ubicación y se crea la asignación actual).
-export function confirmarEntregaContrato(idDetalle: number) {
+// Sede/área/detalle son siempre manuales, sin default sugerido.
+export function confirmarEntregaContrato(
+  idDetalle: number,
+  data: { sede?: string; area?: string; detalle?: string }
+) {
   return patch<ContratoDetalleResponse>(
-    `/api/contratos/detalle/${idDetalle}/confirmar-entrega`
+    `/api/contratos/detalle/${idDetalle}/confirmar-entrega`,
+    data
   );
 }
 
 // Simétrico: confirma que un activo "pendiente_recojo" ya volvió físicamente
 // al almacén.
-export function confirmarRecojoActivo(idActivo: number) {
-  return patch<void>(`/api/contratos/activo/${idActivo}/confirmar-recojo`);
+export function confirmarRecojoActivo(
+  idActivo: number,
+  data: { sede: string; area: string; detalle?: string }
+) {
+  return patch<void>(`/api/contratos/activo/${idActivo}/confirmar-recojo`, data);
+}
+
+// Version en lote: confirma TODOS los activos pendientes de ese contrato con
+// la misma sede/area/detalle. Devuelve la cantidad confirmada.
+export function confirmarEntregaLoteContrato(
+  idContrato: number,
+  data: { sede?: string; area?: string; detalle?: string }
+) {
+  return patch<number>(
+    `/api/contratos/${idContrato}/confirmar-entrega-lote`,
+    data
+  );
+}
+
+export function confirmarRecojoLoteContrato(
+  idContrato: number,
+  data: { sede: string; area: string; detalle?: string }
+) {
+  return patch<number>(
+    `/api/contratos/${idContrato}/confirmar-recojo-lote`,
+    data
+  );
 }
 
 // --- Cobranzas (por contrato) ---
@@ -588,6 +687,7 @@ export function listCobranzasByContrato(idContrato: number) {
 export function generarCobranza(data: {
   idContrato: number;
   periodo: string;
+  porcentajeIgv?: number;
 }) {
   return post<CobranzaResponse>("/api/cobranzas/generar", data);
 }
@@ -627,7 +727,7 @@ export function listContactosCobranza(idCobranza: number) {
 
 export function agregarContactoCobranza(
   idCobranza: number,
-  data: { nombre?: string; email: string; rol?: string }
+  data: { nombre?: string; email: string; rol?: RolContacto }
 ) {
   return post<CobranzaContactoResponse>(
     `/api/cobranzas/${idCobranza}/contactos`,
@@ -672,7 +772,14 @@ export function updateIngreso(
 
 export function agregarDetalleIngreso(
   id: number,
-  data: { idActivo: number; costo?: number; moneda?: string }
+  data: {
+    idActivo: number;
+    costo?: number;
+    moneda?: string;
+    sede: string;
+    area: string;
+    detalle?: string;
+  }
 ) {
   return post<IngresoActivoResponse>(`/api/ingresos/${id}/detalles`, data);
 }
@@ -685,7 +792,14 @@ export function registrarIngresoConActivoExistente(data: {
   numeroDocumento?: string;
   fechaIngreso?: string;
   observacion?: string;
-  detalles: Array<{ idActivo: number; costo?: number; moneda?: string }>;
+  detalles: Array<{
+    idActivo: number;
+    costo?: number;
+    moneda?: string;
+    sede: string;
+    area: string;
+    detalle?: string;
+  }>;
 }) {
   return post<IngresoActivoResponse>("/api/ingresos", data);
 }
@@ -746,6 +860,9 @@ export function repotenciarSwap(
     tipoTarifa: "DIARIO" | "SEMANAL" | "MENSUAL" | "TRIMESTRAL" | "SEMESTRAL" | "ANUAL";
     moneda: "PEN" | "USD";
     fechaInicioAlquiler: string;
+    sede: string;
+    area: string;
+    detalle?: string;
   }
 ) {
   return post<unknown>(`/api/contratos/detalle/${idDetalle}/repotenciar`, data);
@@ -760,6 +877,9 @@ export function repotenciarCompletar(
     precioBase: number;
     moneda: "PEN" | "USD";
     fechaInicioAlquiler?: string;
+    sede: string;
+    area: string;
+    detalle?: string;
   }
 ) {
   return post<unknown>(
