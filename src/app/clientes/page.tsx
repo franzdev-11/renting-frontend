@@ -16,7 +16,7 @@ import {
   updateCliente,
   updateResponsable,
 } from "@/lib/endpoints";
-import type { ClienteResponse, ResponsableResponse } from "@/lib/types";
+import type { ClienteResponse, ResponsableResponse, TipoPersona } from "@/lib/types";
 import { Badge, Button, Card, ErrorBanner, Field, Table, inputClass } from "@/components/ui";
 
 export default function ClientesPage() {
@@ -25,7 +25,12 @@ export default function ClientesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [clienteForm, setClienteForm] = useState({
+  const [clienteForm, setClienteForm] = useState<{
+    ruc: string;
+    razonSocial: string;
+    tipoPersona: TipoPersona;
+    regulada: boolean;
+  }>({
     ruc: "",
     razonSocial: "",
     tipoPersona: "JURIDICA",
@@ -43,7 +48,15 @@ export default function ClientesPage() {
   const [creatingResponsable, setCreatingResponsable] = useState(false);
 
   const [clienteEditando, setClienteEditando] = useState<ClienteResponse | null>(null);
-  const [clienteEditForm, setClienteEditForm] = useState({
+  const [clienteEditForm, setClienteEditForm] = useState<{
+    razonSocial: string;
+    tipoPersona: TipoPersona | "";
+    estadoSunat: string;
+    sectorGiro: string;
+    representanteLegal: string;
+    telefonoContacto: string;
+    regulada: boolean;
+  }>({
     razonSocial: "",
     tipoPersona: "",
     estadoSunat: "",
@@ -293,7 +306,7 @@ export default function ClientesPage() {
               onChange={(e) =>
                 setClienteForm({
                   ...clienteForm,
-                  tipoPersona: e.target.value,
+                  tipoPersona: e.target.value as TipoPersona,
                 })
               }
             >
@@ -319,7 +332,12 @@ export default function ClientesPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              run(() => updateCliente(clienteEditando.id, clienteEditForm));
+              run(() =>
+                updateCliente(clienteEditando.id, {
+                  ...clienteEditForm,
+                  tipoPersona: clienteEditForm.tipoPersona || undefined,
+                })
+              );
             }}
             className="flex flex-col gap-3"
           >
@@ -338,7 +356,10 @@ export default function ClientesPage() {
                 className={inputClass}
                 value={clienteEditForm.tipoPersona}
                 onChange={(e) =>
-                  setClienteEditForm({ ...clienteEditForm, tipoPersona: e.target.value })
+                  setClienteEditForm({
+                    ...clienteEditForm,
+                    tipoPersona: e.target.value as TipoPersona,
+                  })
                 }
               >
                 <option value="JURIDICA">JURIDICA</option>
