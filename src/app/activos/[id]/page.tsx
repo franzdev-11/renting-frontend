@@ -15,12 +15,15 @@ import {
   getActivo,
   getHistorialEstadosMovimiento,
   getHistorialTarifasActivo,
+  getHistorialUbicaciones,
   getVehiculoByActivo,
+  liberarMantenimientoActivo,
   listIncidentesByActivo,
   listLecturasVehiculo,
   listMovimientosByActivo,
   listSegurosByActivo,
   listSegurosInactivos,
+  reactivarReingresoActivo,
   reactivateActivo,
   reactivateSeguro,
   registrarLecturaVehiculo,
@@ -36,13 +39,19 @@ import type {
   ActivoResponse,
   ActivoVehiculoResponse,
   ContratoDetalleResponse,
+  EstadoFisico,
   HistorialEstadoResponse,
   HistorialLecturaVehiculoResponse,
+  HistorialUbicacionResponse,
   IncidenteActivoResponse,
   MovimientoResponse,
   SeguroActivoResponse,
+  Severidad,
 } from "@/lib/types";
 import { Badge, Button, Card, ErrorBanner, Field, Table, inputClass } from "@/components/ui";
+
+const ESTADOS_FISICOS: EstadoFisico[] = ["NUEVO", "SELLADO", "USADO", "REPARADO", "OBSOLETO"];
+const SEVERIDADES: Severidad[] = ["LEVE", "MODERADO", "GRAVE"];
 
 export default function ActivoDetallePage() {
   const params = useParams<{ id: string }>();
@@ -50,6 +59,7 @@ export default function ActivoDetallePage() {
 
   const [activo, setActivo] = useState<ActivoResponse | null>(null);
   const [movimientos, setMovimientos] = useState<MovimientoResponse[]>([]);
+  const [ubicaciones, setUbicaciones] = useState<HistorialUbicacionResponse[]>([]);
   const [incidentes, setIncidentes] = useState<IncidenteActivoResponse[]>([]);
   const [historialTarifas, setHistorialTarifas] = useState<ContratoDetalleResponse[]>([]);
   const [seguros, setSeguros] = useState<SeguroActivoResponse[]>([]);
@@ -59,8 +69,25 @@ export default function ActivoDetallePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [mostrarReingreso, setMostrarReingreso] = useState(false);
+  const [reingresoForm, setReingresoForm] = useState({
+    sede: "",
+    area: "",
+    detalle: "",
+    motivo: "",
+  });
+
   const [editandoActivo, setEditandoActivo] = useState(false);
-  const [activoEditForm, setActivoEditForm] = useState({
+  const [activoEditForm, setActivoEditForm] = useState<{
+    serie: string;
+    descripcion: string;
+    marca: string;
+    modelo: string;
+    color: string;
+    especificaciones: string;
+    criticidad: string;
+    estadoFisico: EstadoFisico | "";
+  }>({
     serie: "",
     descripcion: "",
     marca: "",
@@ -115,10 +142,27 @@ export default function ActivoDetallePage() {
       | "ANUAL",
     precioBase: "",
     moneda: "USD" as "PEN" | "USD",
+    sede: "",
+    area: "",
+    detalle: "",
   });
-  const [incidenteForm, setIncidenteForm] = useState({
+  const [retornoMantForm, setRetornoMantForm] = useState({
+    sede: "",
+    area: "",
+    detalle: "",
+  });
+  const [liberarMantForm, setLiberarMantForm] = useState({
+    sede: "",
+    area: "",
+    detalle: "",
+  });
+  const [incidenteForm, setIncidenteForm] = useState<{
+    tipoIncidente: string;
+    severidad: Severidad;
+    descripcion: string;
+  }>({
     tipoIncidente: "",
-    severidad: "media",
+    severidad: "LEVE",
     descripcion: "",
   });
   const [movimientoSeleccionado, setMovimientoSeleccionado] =
@@ -127,14 +171,16 @@ export default function ActivoDetallePage() {
     HistorialEstadoResponse[]
   >([]);
   const [nuevoEstadoMovimiento, setNuevoEstadoMovimiento] = useState("");
+  const [observacionMovimiento, setObservacionMovimiento] = useState("");
 
   async function cargar() {
     setLoading(true);
     setError(null);
     try {
-      const [a, m, i, tarifas, segsActivos, segsInactivos, veh] = await Promise.all([
+      const [a, m, ubic, i, tarifas, segsActivos, segsInactivos, veh] = await Promise.all([
         getActivo(idActivo),
         listMovimientosByActivo(idActivo),
+        getHistorialUbicaciones(idActivo).catch(() => []),
         listIncidentesByActivo(idActivo),
         getHistorialTarifasActivo(idActivo).catch(() => []),
         listSegurosByActivo(idActivo).catch(() => []),
@@ -143,6 +189,7 @@ export default function ActivoDetallePage() {
       ]);
       setActivo(a);
       setMovimientos(m);
+      setUbicaciones(ubic);
       setIncidentes(i);
       setHistorialTarifas(tarifas);
       setSeguros([
@@ -222,6 +269,11 @@ export default function ActivoDetallePage() {
 
   const enMantenimiento = activo.estadoOperativo?.toLowerCase() === "mantenimiento";
   const dadoDeBaja = activo.estadoOperativo?.toLowerCase() === "baja";
+  const ultimoMovimiento = movimientos[0];
+  const puedeVolverAContrato =
+    enMantenimiento &&
+    ultimoMovimiento?.tipoMov === "MANTENIMIENTO" &&
+    ultimoMovimiento?.idDetalleContrato != null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -239,13 +291,25 @@ export default function ActivoDetallePage() {
               Editar
             </Button>
             {activo.activo === false ? (
-              <Button
-                variant="secondary"
-                loading={busy}
-                onClick={() => run(() => reactivateActivo(idActivo))}
-              >
-                Reactivar
-              </Button>
+              dadoDeBaja ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setReingresoForm({ sede: "", area: "", detalle: "", motivo: "" });
+                    setMostrarReingreso(true);
+                  }}
+                >
+                  Reactivar y reingresar
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  loading={busy}
+                  onClick={() => run(() => reactivateActivo(idActivo))}
+                >
+                  Reactivar
+                </Button>
+              )
             ) : (
               <Button
                 variant="danger"
@@ -288,7 +352,16 @@ export default function ActivoDetallePage() {
             onSubmit={(e) => {
               e.preventDefault();
               run(() =>
-                updateActivo(idActivo, activoEditForm).then(() => setEditandoActivo(false))
+                updateActivo(idActivo, {
+                  ...activoEditForm,
+                  serie: activoEditForm.serie || undefined,
+                  marca: activoEditForm.marca || undefined,
+                  modelo: activoEditForm.modelo || undefined,
+                  color: activoEditForm.color || undefined,
+                  especificaciones: activoEditForm.especificaciones || undefined,
+                  criticidad: activoEditForm.criticidad || undefined,
+                  estadoFisico: activoEditForm.estadoFisico || undefined,
+                }).then(() => setEditandoActivo(false))
               );
             }}
             className="flex flex-col gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800"
@@ -340,19 +413,100 @@ export default function ActivoDetallePage() {
               />
             </Field>
             <Field label="Estado físico">
-              <input
+              <select
                 className={inputClass}
                 value={activoEditForm.estadoFisico}
                 onChange={(e) =>
-                  setActivoEditForm({ ...activoEditForm, estadoFisico: e.target.value })
+                  setActivoEditForm({
+                    ...activoEditForm,
+                    estadoFisico: e.target.value as EstadoFisico | "",
+                  })
                 }
-              />
+              >
+                <option value="">Sin definir</option>
+                {ESTADOS_FISICOS.map((ef) => (
+                  <option key={ef} value={ef}>
+                    {ef}
+                  </option>
+                ))}
+              </select>
             </Field>
             <div className="flex gap-2">
               <Button type="submit" loading={busy}>
                 Guardar cambios
               </Button>
               <Button variant="ghost" onClick={() => setEditandoActivo(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {mostrarReingreso && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(() =>
+                reactivarReingresoActivo(idActivo, {
+                  sede: reingresoForm.sede,
+                  area: reingresoForm.area,
+                  detalle: reingresoForm.detalle || undefined,
+                  motivo: reingresoForm.motivo || undefined,
+                }).then(() => setMostrarReingreso(false))
+              );
+            }}
+            className="flex flex-col gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800"
+          >
+            <p className="text-sm font-medium">
+              Reactivar y reingresar (el activo estaba dado de baja)
+            </p>
+            <p className="text-xs text-neutral-500">
+              Deja el activo `disponible` de nuevo y registra su ingreso con la
+              ubicación indicada.
+            </p>
+            <Field label="Sede">
+              <input
+                className={inputClass}
+                value={reingresoForm.sede}
+                onChange={(e) =>
+                  setReingresoForm({ ...reingresoForm, sede: e.target.value })
+                }
+                required
+              />
+            </Field>
+            <Field label="Área">
+              <input
+                className={inputClass}
+                value={reingresoForm.area}
+                onChange={(e) =>
+                  setReingresoForm({ ...reingresoForm, area: e.target.value })
+                }
+                required
+              />
+            </Field>
+            <Field label="Detalle (opcional)">
+              <input
+                className={inputClass}
+                value={reingresoForm.detalle}
+                onChange={(e) =>
+                  setReingresoForm({ ...reingresoForm, detalle: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Motivo (opcional)">
+              <input
+                className={inputClass}
+                value={reingresoForm.motivo}
+                onChange={(e) =>
+                  setReingresoForm({ ...reingresoForm, motivo: e.target.value })
+                }
+              />
+            </Field>
+            <div className="flex gap-2">
+              <Button type="submit" loading={busy}>
+                Reactivar y reingresar
+              </Button>
+              <Button variant="ghost" onClick={() => setMostrarReingreso(false)}>
                 Cancelar
               </Button>
             </div>
@@ -499,6 +653,14 @@ export default function ActivoDetallePage() {
               }
             />
           </Field>
+          <Field label="Prima anual">
+            <input
+              type="number"
+              className={inputClass}
+              value={seguroForm.primaAnual}
+              onChange={(e) => setSeguroForm({ ...seguroForm, primaAnual: e.target.value })}
+            />
+          </Field>
           <Field label="Fecha inicio">
             <input
               type="date"
@@ -577,6 +739,26 @@ export default function ActivoDetallePage() {
                 value={seguroEditForm.valorAsegurado}
                 onChange={(e) =>
                   setSeguroEditForm({ ...seguroEditForm, valorAsegurado: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Prima anual">
+              <input
+                type="number"
+                className={inputClass}
+                value={seguroEditForm.primaAnual}
+                onChange={(e) =>
+                  setSeguroEditForm({ ...seguroEditForm, primaAnual: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Fecha inicio">
+              <input
+                type="date"
+                className={inputClass}
+                value={seguroEditForm.fechaInicio}
+                onChange={(e) =>
+                  setSeguroEditForm({ ...seguroEditForm, fechaInicio: e.target.value })
                 }
               />
             </Field>
@@ -753,6 +935,33 @@ export default function ActivoDetallePage() {
       </Card>
       )}
 
+      <Card title="Historial de ubicaciones">
+        <Table
+          columns={[
+            { header: "Sede", render: (u: HistorialUbicacionResponse) => u.sede ?? "—" },
+            { header: "Área", render: (u: HistorialUbicacionResponse) => u.area ?? "—" },
+            { header: "Detalle", render: (u: HistorialUbicacionResponse) => u.detalle ?? "—" },
+            {
+              header: "Desde",
+              render: (u: HistorialUbicacionResponse) =>
+                new Date(u.fechaDesde).toLocaleString(),
+            },
+            {
+              header: "Hasta",
+              render: (u: HistorialUbicacionResponse) =>
+                u.fechaHasta ? (
+                  new Date(u.fechaHasta).toLocaleString()
+                ) : (
+                  <Badge value="Actual" />
+                ),
+            },
+          ]}
+          rows={ubicaciones}
+          keyFn={(u) => u.idHistorial}
+          emptyLabel="Este activo todavía no tiene historial de ubicaciones"
+        />
+      </Card>
+
       <Card title="Historial de movimientos">
         <Table
           columns={[
@@ -801,8 +1010,15 @@ export default function ActivoDetallePage() {
               columns={[
                 {
                   header: "Cambio",
-                  render: (h: HistorialEstadoResponse) =>
-                    `${h.estadoAnterior ?? "—"} → ${h.estadoNuevo}`,
+                  render: (h: HistorialEstadoResponse) => (
+                    <span className="flex items-center gap-2">
+                      {`${h.estadoAnterior ?? "—"} → ${h.estadoNuevo}`}
+                      {h.idHistorial ===
+                        historialMovimiento[historialMovimiento.length - 1]?.idHistorial && (
+                        <Badge value="Actual" />
+                      )}
+                    </span>
+                  ),
                 },
                 {
                   header: "Fecha",
@@ -817,15 +1033,25 @@ export default function ActivoDetallePage() {
               rows={historialMovimiento}
               keyFn={(h) => h.idHistorial}
               emptyLabel="Sin cambios de estado registrados todavía"
+              rowClassName={(_h, index) =>
+                index === historialMovimiento.length - 1 ? "bg-green-500/10" : ""
+              }
             />
 
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                const idMov = movimientoSeleccionado.idMovimiento;
                 run(() =>
-                  cambiarEstadoMovimiento(movimientoSeleccionado.idMovimiento, {
+                  cambiarEstadoMovimiento(idMov, {
                     nuevoEstado: nuevoEstadoMovimiento,
-                  }).then(() => setNuevoEstadoMovimiento(""))
+                    observacion: observacionMovimiento || undefined,
+                  }).then(async (actualizado) => {
+                    setMovimientoSeleccionado(actualizado);
+                    setHistorialMovimiento(await getHistorialEstadosMovimiento(idMov));
+                    setNuevoEstadoMovimiento("");
+                    setObservacionMovimiento("");
+                  })
                 );
               }}
               className="flex items-end gap-3"
@@ -836,6 +1062,13 @@ export default function ActivoDetallePage() {
                   value={nuevoEstadoMovimiento}
                   onChange={(e) => setNuevoEstadoMovimiento(e.target.value)}
                   required
+                />
+              </Field>
+              <Field label="Observación (opcional)">
+                <input
+                  className={inputClass}
+                  value={observacionMovimiento}
+                  onChange={(e) => setObservacionMovimiento(e.target.value)}
                 />
               </Field>
               <Button type="submit" variant="secondary" loading={busy}>
@@ -910,7 +1143,7 @@ export default function ActivoDetallePage() {
             e.preventDefault();
             run(() =>
               reportarIncidente({ idActivo, ...incidenteForm }).then(() =>
-                setIncidenteForm({ tipoIncidente: "", severidad: "media", descripcion: "" })
+                setIncidenteForm({ tipoIncidente: "", severidad: "LEVE", descripcion: "" })
               )
             );
           }}
@@ -927,6 +1160,24 @@ export default function ActivoDetallePage() {
               required
             />
           </Field>
+          <Field label="Severidad">
+            <select
+              className={inputClass}
+              value={incidenteForm.severidad}
+              onChange={(e) =>
+                setIncidenteForm({
+                  ...incidenteForm,
+                  severidad: e.target.value as Severidad,
+                })
+              }
+            >
+              {SEVERIDADES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Descripción">
             <input
               className={inputClass}
@@ -942,23 +1193,68 @@ export default function ActivoDetallePage() {
         </form>
       </Card>
 
-      <Card title="Acciones">
+      <Card
+        title="Acciones"
+        description={
+          enMantenimiento && !puedeVolverAContrato
+            ? "Retornar/Repotenciar solo aparecen si este activo llegó a mantenimiento estando alquilado en un contrato todavía vigente. Si no, usá 'Liberar a disponible'."
+            : undefined
+        }
+      >
         <div className="flex flex-col gap-6">
-          {enMantenimiento && (
-            <div>
-              <p className="mb-2 text-sm font-medium">
+          {puedeVolverAContrato && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                run(() =>
+                  retornarMantenimiento(idActivo, {
+                    sede: retornoMantForm.sede,
+                    area: retornoMantForm.area,
+                    detalle: retornoMantForm.detalle || undefined,
+                  })
+                );
+              }}
+              className="flex flex-col gap-3"
+            >
+              <p className="text-sm font-medium">
                 Retornar de mantenimiento (mismo precio de antes)
               </p>
-              <Button
-                onClick={() => run(() => retornarMantenimiento(idActivo, {}))}
-                loading={busy}
-              >
+              <Field label="Sede">
+                <input
+                  className={inputClass}
+                  value={retornoMantForm.sede}
+                  onChange={(e) =>
+                    setRetornoMantForm({ ...retornoMantForm, sede: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Área">
+                <input
+                  className={inputClass}
+                  value={retornoMantForm.area}
+                  onChange={(e) =>
+                    setRetornoMantForm({ ...retornoMantForm, area: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Detalle (opcional)">
+                <input
+                  className={inputClass}
+                  value={retornoMantForm.detalle}
+                  onChange={(e) =>
+                    setRetornoMantForm({ ...retornoMantForm, detalle: e.target.value })
+                  }
+                />
+              </Field>
+              <Button type="submit" loading={busy}>
                 Retornar de mantenimiento
               </Button>
-            </div>
+            </form>
           )}
 
-          {enMantenimiento && (
+          {puedeVolverAContrato && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -967,6 +1263,9 @@ export default function ActivoDetallePage() {
                     tipoTarifa: repotenciarForm.tipoTarifa,
                     precioBase: Number(repotenciarForm.precioBase),
                     moneda: repotenciarForm.moneda,
+                    sede: repotenciarForm.sede,
+                    area: repotenciarForm.area,
+                    detalle: repotenciarForm.detalle || undefined,
                   })
                 );
               }}
@@ -1014,8 +1313,89 @@ export default function ActivoDetallePage() {
                   required
                 />
               </Field>
+              <Field label="Sede">
+                <input
+                  className={inputClass}
+                  value={repotenciarForm.sede}
+                  onChange={(e) =>
+                    setRepotenciarForm({ ...repotenciarForm, sede: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Área">
+                <input
+                  className={inputClass}
+                  value={repotenciarForm.area}
+                  onChange={(e) =>
+                    setRepotenciarForm({ ...repotenciarForm, area: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Detalle (opcional)">
+                <input
+                  className={inputClass}
+                  value={repotenciarForm.detalle}
+                  onChange={(e) =>
+                    setRepotenciarForm({ ...repotenciarForm, detalle: e.target.value })
+                  }
+                />
+              </Field>
               <Button type="submit" loading={busy}>
                 Repotenciar
+              </Button>
+            </form>
+          )}
+
+          {enMantenimiento && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                run(() =>
+                  liberarMantenimientoActivo(idActivo, {
+                    sede: liberarMantForm.sede,
+                    area: liberarMantForm.area,
+                    detalle: liberarMantForm.detalle || undefined,
+                  })
+                );
+              }}
+              className="flex flex-col gap-3"
+            >
+              <p className="text-sm font-medium">
+                Liberar a disponible (no vuelve a ningún contrato)
+              </p>
+              <Field label="Sede">
+                <input
+                  className={inputClass}
+                  value={liberarMantForm.sede}
+                  onChange={(e) =>
+                    setLiberarMantForm({ ...liberarMantForm, sede: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Área">
+                <input
+                  className={inputClass}
+                  value={liberarMantForm.area}
+                  onChange={(e) =>
+                    setLiberarMantForm({ ...liberarMantForm, area: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Detalle (opcional)">
+                <input
+                  className={inputClass}
+                  value={liberarMantForm.detalle}
+                  onChange={(e) =>
+                    setLiberarMantForm({ ...liberarMantForm, detalle: e.target.value })
+                  }
+                />
+              </Field>
+              <Button type="submit" loading={busy}>
+                Liberar a disponible
               </Button>
             </form>
           )}
@@ -1024,7 +1404,12 @@ export default function ActivoDetallePage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                run(() => trasladarActivo(idActivo, trasladoForm));
+                run(() =>
+                  trasladarActivo(idActivo, {
+                    ...trasladoForm,
+                    detalle: trasladoForm.detalle || undefined,
+                  })
+                );
               }}
               className="flex flex-col gap-3"
             >
@@ -1037,6 +1422,25 @@ export default function ActivoDetallePage() {
                     setTrasladoForm({ ...trasladoForm, sede: e.target.value })
                   }
                   required
+                />
+              </Field>
+              <Field label="Área de destino">
+                <input
+                  className={inputClass}
+                  value={trasladoForm.area}
+                  onChange={(e) =>
+                    setTrasladoForm({ ...trasladoForm, area: e.target.value })
+                  }
+                  required
+                />
+              </Field>
+              <Field label="Detalle de destino (opcional)">
+                <input
+                  className={inputClass}
+                  value={trasladoForm.detalle}
+                  onChange={(e) =>
+                    setTrasladoForm({ ...trasladoForm, detalle: e.target.value })
+                  }
                 />
               </Field>
               <Field label="Motivo">
