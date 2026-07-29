@@ -108,6 +108,7 @@ const badgeColors: Record<string, string> = {
   pagado: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
   vencido: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   anulado: "bg-neutral-200 text-neutral-500 line-through dark:bg-neutral-800",
+  actual: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
 };
 
 export function Badge({ value }: { value?: string | boolean | null }) {
@@ -131,11 +132,13 @@ export function Table<T>({
   rows,
   keyFn,
   emptyLabel = "Sin datos todavía",
+  rowClassName,
 }: {
   columns: { header: string; render: (row: T) => React.ReactNode }[];
   rows: T[];
   keyFn: (row: T) => string | number;
   emptyLabel?: string;
+  rowClassName?: (row: T, index: number) => string;
 }) {
   if (rows.length === 0) {
     return (
@@ -157,10 +160,10 @@ export function Table<T>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <tr
               key={keyFn(row)}
-              className="border-b border-neutral-100 last:border-0 dark:border-neutral-900"
+              className={`border-b border-neutral-100 last:border-0 dark:border-neutral-900 ${rowClassName ? rowClassName(row, index) : ""}`}
             >
               {columns.map((c) => (
                 <td key={c.header} className="whitespace-nowrap px-3 py-2">
@@ -172,6 +175,62 @@ export function Table<T>({
         </tbody>
       </table>
     </div>
+  );
+}
+
+// tipo_ingreso sigue siendo texto libre en el backend (el DDL dice "etc" --
+// lista abierta, no es un enum real) -- este select es solo una ayuda de UX
+// para no tener que escribir a mano los valores más comunes. "otro" revela
+// un input de texto libre al lado para cualquier valor que no esté en la
+// lista. Los valores se mantienen en minúscula (así ya está guardado hoy).
+const TIPOS_INGRESO_CONOCIDOS = [
+  "compra",
+  "donacion",
+  "transferencia",
+  "garantia",
+  "leasing",
+] as const;
+
+export function TipoIngresoField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const esConocido = (TIPOS_INGRESO_CONOCIDOS as readonly string[]).includes(value);
+
+  return (
+    <Field label="Tipo de ingreso">
+      <div className="flex flex-col gap-2">
+        <select
+          className={inputClass}
+          value={esConocido ? value : "otro"}
+          onChange={(e) => {
+            if (e.target.value === "otro") {
+              onChange("");
+            } else {
+              onChange(e.target.value);
+            }
+          }}
+        >
+          {TIPOS_INGRESO_CONOCIDOS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+          <option value="otro">otro...</option>
+        </select>
+        {!esConocido && (
+          <input
+            className={inputClass}
+            placeholder="Escribí el tipo de ingreso"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )}
+      </div>
+    </Field>
   );
 }
 

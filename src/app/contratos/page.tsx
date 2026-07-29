@@ -31,10 +31,13 @@ export default function ContratosPage() {
   const [form, setForm] = useState({
     contratoCodigo: "",
     idCliente: "",
-    idActivo: "",
-    idResponsable: "",
     fechaInicio: new Date().toISOString().slice(0, 10),
     fechaFinPrevista: "",
+  });
+
+  const filaVacia = {
+    idActivo: "",
+    idResponsable: "",
     tipoTarifa: "MENSUAL" as
       | "DIARIO"
       | "SEMANAL"
@@ -44,8 +47,20 @@ export default function ContratosPage() {
       | "ANUAL",
     precioBase: "",
     moneda: "USD" as "PEN" | "USD",
-    diaFacturacion: "5",
-  });
+  };
+  const [items, setItems] = useState([{ ...filaVacia }]);
+
+  function actualizarFila(idx: number, cambios: Partial<typeof filaVacia>) {
+    setItems(items.map((it, i) => (i === idx ? { ...it, ...cambios } : it)));
+  }
+
+  function agregarFila() {
+    setItems([...items, { ...filaVacia }]);
+  }
+
+  function quitarFila(idx: number) {
+    setItems(items.filter((_, i) => i !== idx));
+  }
 
   async function cargar() {
     setLoading(true);
@@ -83,27 +98,50 @@ export default function ContratosPage() {
 
   async function handleCrear(e: React.FormEvent) {
     e.preventDefault();
-    setCreating(true);
     setError(null);
+
+    // Filas completamente vacías (nunca tocadas) se ignoran en silencio --
+    // el resto tiene que tener activo y precio base (lo mismo que ya exigía
+    // el formulario de un solo activo) o se rechaza el envío entero antes
+    // de pegarle a la API.
+    const filasConDatos = items.filter(
+      (it) => it.idActivo.trim() !== "" || it.precioBase.trim() !== ""
+    );
+
+    if (filasConDatos.length === 0) {
+      setError("Agregá al menos un activo al contrato.");
+      return;
+    }
+
+    const filaIncompletaIdx = filasConDatos.findIndex(
+      (it) => it.idActivo.trim() === "" || it.precioBase.trim() === ""
+    );
+    if (filaIncompletaIdx !== -1) {
+      setError(
+        `La fila ${filaIncompletaIdx + 1} está incompleta: activo y precio base son obligatorios.`
+      );
+      return;
+    }
+
+    setCreating(true);
     try {
       await createContrato({
         contratoCodigo: form.contratoCodigo,
         idCliente: Number(form.idCliente),
         fechaInicio: form.fechaInicio,
         fechaFinPrevista: form.fechaFinPrevista || undefined,
-        detalles: [
-          {
-            idActivo: Number(form.idActivo),
-            idResponsable: form.idResponsable ? Number(form.idResponsable) : undefined,
-            tipoTarifa: form.tipoTarifa,
-            precioBase: Number(form.precioBase),
-            moneda: form.moneda,
-            diaFacturacion: Number(form.diaFacturacion),
-            fechaInicioAlquiler: form.fechaInicio,
-          },
-        ],
+        detalles: filasConDatos.map((it) => ({
+          idActivo: Number(it.idActivo),
+          idResponsable: it.idResponsable ? Number(it.idResponsable) : undefined,
+          tipoTarifa: it.tipoTarifa,
+          precioBase: Number(it.precioBase),
+          moneda: it.moneda,
+          diaFacturacion: 5,
+          fechaInicioAlquiler: form.fechaInicio,
+        })),
       });
-      setForm({ ...form, contratoCodigo: "", idActivo: "", precioBase: "" });
+      setForm({ ...form, contratoCodigo: "" });
+      setItems([{ ...filaVacia }]);
       await cargar();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
@@ -170,9 +208,10 @@ export default function ContratosPage() {
             <select
               className={inputClass}
               value={form.idCliente}
-              onChange={(e) =>
-                setForm({ ...form, idCliente: e.target.value, idResponsable: "" })
-              }
+              onChange={(e) => {
+                setForm({ ...form, idCliente: e.target.value });
+                setItems(items.map((it) => ({ ...it, idResponsable: "" })));
+              }}
               required
             >
               <option value="" disabled>
@@ -181,38 +220,6 @@ export default function ContratosPage() {
               {clientes.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.razonSocial}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Responsable (opcional)">
-            <select
-              className={inputClass}
-              value={form.idResponsable}
-              onChange={(e) => setForm({ ...form, idResponsable: e.target.value })}
-              disabled={!form.idCliente}
-            >
-              <option value="">Sin responsable</option>
-              {responsables.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nombreCompleto}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Activo">
-            <select
-              className={inputClass}
-              value={form.idActivo}
-              onChange={(e) => setForm({ ...form, idActivo: e.target.value })}
-              required
-            >
-              <option value="" disabled>
-                Selecciona un activo
-              </option>
-              {activos.map((a) => (
-                <option key={a.idActivo} value={a.idActivo}>
-                  {a.codigoInterno} ({a.estadoOperativo ?? "sin estado"})
                 </option>
               ))}
             </select>
@@ -226,52 +233,104 @@ export default function ContratosPage() {
               required
             />
           </Field>
-          <Field label="Tipo de tarifa">
-            <select
-              className={inputClass}
-              value={form.tipoTarifa}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  tipoTarifa: e.target.value as
-                    | "DIARIO"
-                    | "SEMANAL"
-                    | "MENSUAL"
-                    | "TRIMESTRAL"
-                    | "SEMESTRAL"
-                    | "ANUAL",
-                })
-              }
-            >
-              <option value="DIARIO">DIARIO</option>
-              <option value="SEMANAL">SEMANAL</option>
-              <option value="MENSUAL">MENSUAL</option>
-              <option value="TRIMESTRAL">TRIMESTRAL</option>
-              <option value="SEMESTRAL">SEMESTRAL</option>
-              <option value="ANUAL">ANUAL</option>
-            </select>
-          </Field>
-          <Field label="Precio base">
-            <input
-              type="number"
-              className={inputClass}
-              value={form.precioBase}
-              onChange={(e) => setForm({ ...form, precioBase: e.target.value })}
-              required
-            />
-          </Field>
-          <Field label="Moneda">
-            <select
-              className={inputClass}
-              value={form.moneda}
-              onChange={(e) =>
-                setForm({ ...form, moneda: e.target.value as "PEN" | "USD" })
-              }
-            >
-              <option value="USD">USD</option>
-              <option value="PEN">PEN</option>
-            </select>
-          </Field>
+
+          <div className="flex flex-col gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+            <p className="text-sm font-medium">Activos a incluir en este contrato</p>
+            {items.map((item, idx) => (
+              <div
+                key={idx}
+                className="flex flex-col gap-3 rounded border border-neutral-200 p-3 dark:border-neutral-800"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-neutral-500">Activo {idx + 1}</p>
+                  {items.length > 1 && (
+                    <Button variant="ghost" onClick={() => quitarFila(idx)}>
+                      Quitar
+                    </Button>
+                  )}
+                </div>
+                <Field label="Activo">
+                  <select
+                    className={inputClass}
+                    value={item.idActivo}
+                    onChange={(e) => actualizarFila(idx, { idActivo: e.target.value })}
+                  >
+                    <option value="" disabled>
+                      Selecciona un activo
+                    </option>
+                    {activos.map((a) => (
+                      <option key={a.idActivo} value={a.idActivo}>
+                        {a.codigoInterno} ({a.estadoOperativo ?? "sin estado"})
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Responsable (opcional)">
+                  <select
+                    className={inputClass}
+                    value={item.idResponsable}
+                    onChange={(e) => actualizarFila(idx, { idResponsable: e.target.value })}
+                    disabled={!form.idCliente}
+                  >
+                    <option value="">Sin responsable</option>
+                    {responsables.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.nombreCompleto}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Tipo de tarifa">
+                  <select
+                    className={inputClass}
+                    value={item.tipoTarifa}
+                    onChange={(e) =>
+                      actualizarFila(idx, {
+                        tipoTarifa: e.target.value as
+                          | "DIARIO"
+                          | "SEMANAL"
+                          | "MENSUAL"
+                          | "TRIMESTRAL"
+                          | "SEMESTRAL"
+                          | "ANUAL",
+                      })
+                    }
+                  >
+                    <option value="DIARIO">DIARIO</option>
+                    <option value="SEMANAL">SEMANAL</option>
+                    <option value="MENSUAL">MENSUAL</option>
+                    <option value="TRIMESTRAL">TRIMESTRAL</option>
+                    <option value="SEMESTRAL">SEMESTRAL</option>
+                    <option value="ANUAL">ANUAL</option>
+                  </select>
+                </Field>
+                <Field label="Precio base">
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={item.precioBase}
+                    onChange={(e) => actualizarFila(idx, { precioBase: e.target.value })}
+                  />
+                </Field>
+                <Field label="Moneda">
+                  <select
+                    className={inputClass}
+                    value={item.moneda}
+                    onChange={(e) =>
+                      actualizarFila(idx, { moneda: e.target.value as "PEN" | "USD" })
+                    }
+                  >
+                    <option value="USD">USD</option>
+                    <option value="PEN">PEN</option>
+                  </select>
+                </Field>
+              </div>
+            ))}
+            <Button type="button" variant="secondary" onClick={agregarFila}>
+              + Agregar otro activo a este contrato
+            </Button>
+          </div>
+
           <Button type="submit" loading={creating}>
             Crear contrato
           </Button>

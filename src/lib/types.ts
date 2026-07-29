@@ -25,11 +25,13 @@ export interface TipoProductoResponse {
   activo?: boolean;
 }
 
+export type TipoPersona = "JURIDICA" | "NATURAL";
+
 export interface ClienteResponse {
   id: number;
   ruc: string;
   razonSocial: string;
-  tipoPersona?: string;
+  tipoPersona?: TipoPersona;
   estadoSunat?: string;
   sectorGiro?: string;
   representanteLegal?: string;
@@ -50,6 +52,8 @@ export interface ResponsableResponse {
   activo?: boolean;
 }
 
+export type EstadoFisico = "NUEVO" | "SELLADO" | "USADO" | "REPARADO" | "OBSOLETO";
+
 export interface ActivoResponse {
   idActivo: number;
   codigoInterno: string;
@@ -66,7 +70,7 @@ export interface ActivoResponse {
   color?: string;
   especificaciones?: string;
   criticidad?: string;
-  estadoFisico?: string;
+  estadoFisico?: EstadoFisico;
   estadoOperativo?: string;
   vidaUtilAnios?: number;
   unidadesTotalesVida?: number;
@@ -141,17 +145,32 @@ export interface HistorialEstadoResponse {
   observacion?: string;
 }
 
+export interface HistorialUbicacionResponse {
+  idHistorial: number;
+  sede?: string;
+  area?: string;
+  detalle?: string;
+  fechaDesde: string;
+  fechaHasta?: string;
+  idMovimiento?: number;
+  idUsuarioRegistro?: number;
+  nombreUsuarioRegistro?: string;
+}
+
+export type Severidad = "LEVE" | "MODERADO" | "GRAVE";
+export type EstadoIncidente = "REPORTADO" | "DERIVADO_MANTENIMIENTO" | "DADO_DE_BAJA" | "RESUELTO";
+
 export interface IncidenteActivoResponse {
   idIncidente: number;
   idActivo: number;
   codigoInternoActivo?: string;
   idMovimiento?: number;
   tipoIncidente: string;
-  severidad?: string;
+  severidad?: Severidad;
   descripcion?: string;
   fechaIncidente?: string;
   costoReparacion?: number;
-  estadoIncidente: string;
+  estadoIncidente: EstadoIncidente;
   proveedorReparacion?: string;
   fechaReparacion?: string;
   observacion?: string;
@@ -230,12 +249,14 @@ export interface CobranzaResponse {
   detalles: CobranzaDetalleResponse[];
 }
 
+export type RolContacto = "TO" | "CC" | "BCC";
+
 export interface CobranzaContactoResponse {
   idContacto: number;
   idCobranza: number;
   nombre?: string;
   email: string;
-  rol?: string;
+  rol?: RolContacto;
   activo?: boolean;
 }
 

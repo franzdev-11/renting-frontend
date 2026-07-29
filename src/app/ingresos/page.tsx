@@ -10,7 +10,15 @@ import {
   updateIngreso,
 } from "@/lib/endpoints";
 import type { ActivoResponse, IngresoActivoResponse } from "@/lib/types";
-import { Button, Card, ErrorBanner, Field, Table, inputClass } from "@/components/ui";
+import {
+  Button,
+  Card,
+  ErrorBanner,
+  Field,
+  Table,
+  TipoIngresoField,
+  inputClass,
+} from "@/components/ui";
 
 export default function IngresosPage() {
   const [ingresos, setIngresos] = useState<IngresoActivoResponse[]>([]);
@@ -28,7 +36,14 @@ export default function IngresosPage() {
     fechaIngreso: "",
     observacion: "",
   });
-  const [detalleForm, setDetalleForm] = useState({ idActivo: "", costo: "", moneda: "USD" });
+  const [detalleForm, setDetalleForm] = useState({
+    idActivo: "",
+    costo: "",
+    moneda: "USD",
+    sede: "",
+    area: "",
+    detalle: "",
+  });
 
   const [nuevoForm, setNuevoForm] = useState({
     idActivo: "",
@@ -37,6 +52,9 @@ export default function IngresosPage() {
     numeroDocumento: "",
     costo: "",
     moneda: "USD",
+    sede: "",
+    area: "",
+    detalle: "",
   });
   const [creating, setCreating] = useState(false);
 
@@ -101,6 +119,9 @@ export default function IngresosPage() {
             idActivo: Number(nuevoForm.idActivo),
             costo: nuevoForm.costo ? Number(nuevoForm.costo) : undefined,
             moneda: nuevoForm.costo ? nuevoForm.moneda : undefined,
+            sede: nuevoForm.sede,
+            area: nuevoForm.area,
+            detalle: nuevoForm.detalle || undefined,
           },
         ],
       });
@@ -111,6 +132,9 @@ export default function IngresosPage() {
         numeroDocumento: "",
         costo: "",
         moneda: "USD",
+        sede: "",
+        area: "",
+        detalle: "",
       });
       await cargar();
     } catch (e) {
@@ -156,7 +180,14 @@ export default function IngresosPage() {
               },
               {
                 header: "Activos",
-                render: (i: IngresoActivoResponse) => i.detalles?.length ?? 0,
+                render: (i: IngresoActivoResponse) => {
+                  const detalles = i.detalles ?? [];
+                  if (detalles.length === 0) return 0;
+                  const codigos = detalles.map((d) => d.codigoInternoActivo);
+                  const visibles = codigos.slice(0, 3).join(", ");
+                  const resto = codigos.length - 3;
+                  return resto > 0 ? `${visibles} (+${resto} más)` : visibles;
+                },
               },
               {
                 header: "",
@@ -209,13 +240,10 @@ export default function IngresosPage() {
               className="flex flex-col gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800"
             >
               <p className="text-sm font-medium">Editar datos del ingreso</p>
-              <Field label="Tipo de ingreso">
-                <input
-                  className={inputClass}
-                  value={editForm.tipoIngreso}
-                  onChange={(e) => setEditForm({ ...editForm, tipoIngreso: e.target.value })}
-                />
-              </Field>
+              <TipoIngresoField
+                value={editForm.tipoIngreso}
+                onChange={(v) => setEditForm({ ...editForm, tipoIngreso: v })}
+              />
               <Field label="Proveedor">
                 <input
                   className={inputClass}
@@ -260,7 +288,19 @@ export default function IngresosPage() {
                     idActivo: Number(detalleForm.idActivo),
                     costo: detalleForm.costo ? Number(detalleForm.costo) : undefined,
                     moneda: detalleForm.costo ? detalleForm.moneda : undefined,
-                  }).then(() => setDetalleForm({ idActivo: "", costo: "", moneda: "USD" }))
+                    sede: detalleForm.sede,
+                    area: detalleForm.area,
+                    detalle: detalleForm.detalle || undefined,
+                  }).then(() =>
+                    setDetalleForm({
+                      idActivo: "",
+                      costo: "",
+                      moneda: "USD",
+                      sede: "",
+                      area: "",
+                      detalle: "",
+                    })
+                  )
                 );
               }}
               className="flex flex-col gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800"
@@ -289,6 +329,29 @@ export default function IngresosPage() {
                   className={inputClass}
                   value={detalleForm.costo}
                   onChange={(e) => setDetalleForm({ ...detalleForm, costo: e.target.value })}
+                />
+              </Field>
+              <Field label="Sede">
+                <input
+                  className={inputClass}
+                  value={detalleForm.sede}
+                  onChange={(e) => setDetalleForm({ ...detalleForm, sede: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Área">
+                <input
+                  className={inputClass}
+                  value={detalleForm.area}
+                  onChange={(e) => setDetalleForm({ ...detalleForm, area: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Detalle (opcional)">
+                <input
+                  className={inputClass}
+                  value={detalleForm.detalle}
+                  onChange={(e) => setDetalleForm({ ...detalleForm, detalle: e.target.value })}
                 />
               </Field>
               <Button type="submit" variant="secondary" loading={busy}>
@@ -321,13 +384,10 @@ export default function IngresosPage() {
               ))}
             </select>
           </Field>
-          <Field label="Tipo de ingreso">
-            <input
-              className={inputClass}
-              value={nuevoForm.tipoIngreso}
-              onChange={(e) => setNuevoForm({ ...nuevoForm, tipoIngreso: e.target.value })}
-            />
-          </Field>
+          <TipoIngresoField
+            value={nuevoForm.tipoIngreso}
+            onChange={(v) => setNuevoForm({ ...nuevoForm, tipoIngreso: v })}
+          />
           <Field label="Proveedor (opcional)">
             <input
               className={inputClass}
@@ -348,6 +408,29 @@ export default function IngresosPage() {
               className={inputClass}
               value={nuevoForm.costo}
               onChange={(e) => setNuevoForm({ ...nuevoForm, costo: e.target.value })}
+            />
+          </Field>
+          <Field label="Sede">
+            <input
+              className={inputClass}
+              value={nuevoForm.sede}
+              onChange={(e) => setNuevoForm({ ...nuevoForm, sede: e.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Área">
+            <input
+              className={inputClass}
+              value={nuevoForm.area}
+              onChange={(e) => setNuevoForm({ ...nuevoForm, area: e.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Detalle (opcional)">
+            <input
+              className={inputClass}
+              value={nuevoForm.detalle}
+              onChange={(e) => setNuevoForm({ ...nuevoForm, detalle: e.target.value })}
             />
           </Field>
           <Button type="submit" loading={creating} disabled={activos.length === 0}>

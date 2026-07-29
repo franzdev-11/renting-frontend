@@ -19,10 +19,12 @@ import type {
   CobranzaDetalleResponse,
   CobranzaResponse,
   HistorialEstadoCobranzaResponse,
+  RolContacto,
 } from "@/lib/types";
 import { Badge, Button, Card, ErrorBanner, Field, Table, inputClass } from "@/components/ui";
 
 const ESTADOS = ["PENDIENTE", "FACTURADO", "ENVIADO", "PAGADO", "VENCIDO", "ANULADO"];
+const ROLES_CONTACTO: RolContacto[] = ["TO", "CC", "BCC"];
 
 export default function CobranzaSection({ idContrato }: { idContrato: number }) {
   const [cobranzas, setCobranzas] = useState<CobranzaResponse[]>([]);
@@ -31,6 +33,7 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
   const [busy, setBusy] = useState(false);
 
   const [periodo, setPeriodo] = useState(new Date().toISOString().slice(0, 7) + "-01");
+  const [porcentajeIgv, setPorcentajeIgv] = useState("18");
   const [seleccionada, setSeleccionada] = useState<CobranzaResponse | null>(null);
   const [historial, setHistorial] = useState<HistorialEstadoCobranzaResponse[]>([]);
   const [contactos, setContactos] = useState<CobranzaContactoResponse[]>([]);
@@ -38,7 +41,11 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
   const [factura, setFactura] = useState("");
   const [nuevoEstado, setNuevoEstado] = useState("");
   const [medioPago, setMedioPago] = useState("");
-  const [contactoForm, setContactoForm] = useState({ nombre: "", email: "", rol: "TO" });
+  const [contactoForm, setContactoForm] = useState<{
+    nombre: string;
+    email: string;
+    rol: RolContacto;
+  }>({ nombre: "", email: "", rol: "TO" });
 
   const [consultaPeriodo, setConsultaPeriodo] = useState(
     new Date().toISOString().slice(0, 7) + "-01"
@@ -118,7 +125,13 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          run(() => generarCobranza({ idContrato, periodo }));
+          run(() =>
+            generarCobranza({
+              idContrato,
+              periodo,
+              porcentajeIgv: porcentajeIgv !== "" ? Number(porcentajeIgv) : undefined,
+            })
+          );
         }}
         className="flex items-end gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800"
       >
@@ -128,6 +141,15 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
             className={inputClass}
             value={periodo}
             onChange={(e) => setPeriodo(e.target.value)}
+          />
+        </Field>
+        <Field label="Porcentaje de IGV (0 si el precio ya lo incluye)">
+          <input
+            type="number"
+            step="0.01"
+            className={inputClass}
+            value={porcentajeIgv}
+            onChange={(e) => setPorcentajeIgv(e.target.value)}
           />
         </Field>
         <Button type="submit" loading={busy}>
@@ -307,7 +329,7 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
                 <option value="" disabled>
                   Selecciona un estado
                 </option>
-                {ESTADOS.filter((e) => e !== seleccionada.estado).map((e) => (
+                {ESTADOS.filter((e) => e !== seleccionada.estado && e !== "FACTURADO" && e !== "PAGADO").map((e) => (
                   <option key={e} value={e}>
                     {e}
                   </option>
@@ -319,8 +341,10 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
             </Button>
           </form>
           <p className="text-xs text-neutral-500">
-            No todas las transiciones están permitidas (ej: no se puede anular algo
-            ya PAGADO) — el backend valida y te avisa si el cambio no es válido.
+            Para FACTURADO usá "Emitir con número de factura" y para PAGADO usá "Registrar pago" —
+            esas acciones completan los datos correspondientes. Acá solo se puede pasar a
+            ENVIADO, VENCIDO o ANULADO. No todas las transiciones están permitidas (ej: no se
+            puede anular algo ya PAGADO) — el backend valida y te avisa si el cambio no es válido.
           </p>
 
           <div>
@@ -399,6 +423,24 @@ export default function CobranzaSection({ idContrato }: { idContrato: number }) 
                   }
                   required
                 />
+              </Field>
+              <Field label="Rol">
+                <select
+                  className={inputClass}
+                  value={contactoForm.rol}
+                  onChange={(e) =>
+                    setContactoForm({
+                      ...contactoForm,
+                      rol: e.target.value as RolContacto,
+                    })
+                  }
+                >
+                  {ROLES_CONTACTO.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Button type="submit" variant="secondary" loading={busy}>
                 Agregar
